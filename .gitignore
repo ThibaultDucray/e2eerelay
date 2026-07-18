@@ -1,0 +1,21 @@
+# Build artifacts
+/relay
+/bin/
+
+# Local runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local env files
+.env
+.env.*
+
+# Claude Code local settings
+.claude/settings.local.json
