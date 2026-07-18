@@ -170,7 +170,7 @@ func (h *Handlers) DeregisterDevice(w http.ResponseWriter, r *http.Request) {
 	token := tokenFromCtx(r.Context())
 	ctx := r.Context()
 
-	deleted, err := h.store.DeleteDevice(ctx, token.DeviceID)
+	deleted, err := h.store.DeleteDevice(ctx, token.DeviceID, time.Now().UnixNano())
 	if err != nil {
 		h.log.Error("delete device", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to deregister device", 0)

@@ -244,6 +244,15 @@ This action is **irreversible**. After a successful response the `send_token` an
 - The `send_token` is used for authentication; the server derives `device_id` from it. No request body is required.
 - On deregistration clients should locally discard `device_id`, `inbox_id`, `send_token`, and `recv_token`.
 - Re-registering after deregistration requires a new call to `POST /devices`, which assigns a new `device_id` and new tokens.
+- **`acked_at` limitation:** as part of deregistration, the server marks `acked_at` on this
+  device's own still-pending recipient rows (messages addressed to it that it never polled).
+  This is a storage-hygiene step, not a real acknowledgement — the device never actually
+  received or decrypted those messages. It exists only so that
+  `DeleteFullyAckedMessages` isn't blocked indefinitely by a device that can no longer poll.
+  A recipient row's `acked_at` being set therefore does **not** always mean that
+  recipient's device successfully processed the message; it may instead mean the device
+  deregistered before polling it. This does not affect other, still-active recipients of
+  the same message — their own `acked_at` continues to reflect a genuine ACK from a poll.
 
 ---
 

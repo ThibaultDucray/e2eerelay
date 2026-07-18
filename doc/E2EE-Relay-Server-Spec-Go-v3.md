@@ -76,8 +76,12 @@ Indexes:
 
 #### `message_recipients`
 Tracks delivery per recipient.
-- `message_id` uuid FK
-- `recipient_inbox_id` text
+- `message_id` uuid FK, `ON DELETE CASCADE` from `messages`
+- `recipient_inbox_id` text — **no FK** to `inboxes`. A message's recipient list is
+  immutable metadata about who it was addressed to at send time and must survive that
+  inbox/device later being deleted (see §4.6). It's set once by the sender and never
+  changed afterward, other than `acked_at` being set by the recipient (or, on
+  deregistration, by the server on the recipient's behalf — see below).
 - `acked_at` timestamptz NULL
 
 PK: `(message_id, recipient_inbox_id)`
@@ -127,6 +131,23 @@ Long-poll:
 ### 4.6 Cleanup
 - Fully-acked messages: when all recipients are acked, delete message row (or schedule).
 - TTL purge: delete expired messages.
+
+**Device deregistration and `acked_at`:** deleting a device (`DELETE /devices`) must not
+delete other messages' `message_recipients` rows referencing that device's inbox — see the
+schema note in §3. Doing so previously let one recipient's deregistration silently shrink
+a still-pending multi-recipient message's recipient list for the remaining recipients,
+breaking AAD-bound decryption on the client side (see `BUGFIX-recipient-list-cascade.md`
+in the repo root for the full incident writeup).
+
+Instead, deregistration marks `acked_at` (to "now") on the departing device's own
+still-pending recipient rows — messages addressed to it that it never polled — before
+deleting the device row. This is **not a genuine acknowledgement**; the device never
+received or decrypted those messages. It exists purely so `DeleteFullyAckedMessages`
+isn't blocked indefinitely by a recipient that can no longer poll. Consequence: a non-NULL
+`acked_at` on a recipient row means either "this recipient's device polled and acked it"
+or "this recipient's device deregistered before acking it" — the two are indistinguishable
+from that column alone. This is a deliberate, documented limitation of what `acked_at`
+means, not a bug.
 
 ---
 

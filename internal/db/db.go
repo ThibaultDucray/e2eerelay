@@ -98,9 +98,11 @@ type Store interface {
 	// AckMessages marks messageIDs as acked for inboxID. Returns the count of existing
 	// recipient rows (acked + already-acked) and the count of missing IDs.
 	AckMessages(ctx context.Context, inboxID string, messageIDs []string, nowNs int64) (acked, missing int, err error)
-	// DeleteDevice removes a device and all associated inboxes and tokens (via
-	// CASCADE). Returns true if the device existed, false if not found.
-	DeleteDevice(ctx context.Context, deviceID string) (bool, error)
+	// DeleteDevice acks the device's own still-pending recipient rows (so messages
+	// addressed to it can be reaped once their other recipients ack), then removes
+	// the device and its inboxes/tokens (via CASCADE). Returns true if the device
+	// existed, false if not found.
+	DeleteDevice(ctx context.Context, deviceID string, nowNs int64) (bool, error)
 	DeleteExpiredMessages(ctx context.Context, nowNs int64) (int64, error)
 	DeleteFullyAckedMessages(ctx context.Context) (int64, error)
 	Ping(ctx context.Context) error
@@ -394,14 +396,39 @@ func (s *store) AckMessages(ctx context.Context, inboxID string, messageIDs []st
 	return existCount, len(messageIDs) - existCount, nil
 }
 
-func (s *store) DeleteDevice(ctx context.Context, deviceID string) (bool, error) {
-	q := s.bind(`DELETE FROM relay_devices WHERE device_id = ?`)
-	res, err := s.db.ExecContext(ctx, q, deviceID)
+func (s *store) DeleteDevice(ctx context.Context, deviceID string, nowNs int64) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Ack this device's own still-pending recipient rows before it disappears, so
+	// DeleteFullyAckedMessages isn't blocked forever waiting on a device that will
+	// never poll again. Not a real ack (the message was never actually delivered/
+	// decrypted) but functionally equivalent once the device no longer exists.
+	ackQ := s.bind(`
+		UPDATE relay_message_recipients SET acked_at = ?
+		WHERE acked_at IS NULL AND recipient_inbox_id IN (
+			SELECT inbox_id FROM relay_inboxes WHERE device_id = ?
+		)`)
+	if _, err := tx.ExecContext(ctx, ackQ, nowNs, deviceID); err != nil {
+		return false, err
+	}
+
+	delQ := s.bind(`DELETE FROM relay_devices WHERE device_id = ?`)
+	res, err := tx.ExecContext(ctx, delQ, deviceID)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 func (s *store) DeleteExpiredMessages(ctx context.Context, nowNs int64) (int64, error) {

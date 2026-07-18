@@ -45,7 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_relay_msg_cursor  ON relay_messages(created_at, m
 
 CREATE TABLE IF NOT EXISTS relay_message_recipients (
     message_id          TEXT    NOT NULL REFERENCES relay_messages(message_id) ON DELETE CASCADE,
-    recipient_inbox_id  TEXT    NOT NULL REFERENCES relay_inboxes(inbox_id)   ON DELETE CASCADE,
+    -- No FK to relay_inboxes: a message's recipient list must stay immutable after send,
+    -- even if a recipient device later deregisters. See BUGFIX-recipient-list-cascade.md.
+    recipient_inbox_id  TEXT    NOT NULL,
     acked_at            INTEGER NULL,
     PRIMARY KEY (message_id, recipient_inbox_id)
 );
