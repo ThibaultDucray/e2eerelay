@@ -57,7 +57,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go cleanup.Run(ctx, store, cfg.CleanupIntervalSec, log)
+	go cleanup.Run(ctx, store, cfg.CleanupIntervalSec, cfg.TokenIdleDays, log)
 	go rl.RunEviction(ctx)
 	go challenge.RunEviction(ctx, cs)
 

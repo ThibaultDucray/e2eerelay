@@ -1,0 +1,12 @@
+{
+  "apps": [
+    {
+      "app_id": "app_8a3dd5cc-1c5f-400d-aa10-792e0351eac1",
+      "org_id": "user_98c69702-58ff-40af-be85-0697d828db55",
+      "deploy_url": "https://push-n3-par-clevercloud-customers.services.clever-cloud.com/app_8a3dd5cc-1c5f-400d-aa10-792e0351eac1.git",
+      "git_ssh_url": "git+ssh://git@push-n3-par-clevercloud-customers.services.clever-cloud.com/app_8a3dd5cc-1c5f-400d-aa10-792e0351eac1.git",
+      "name": "Relay",
+      "alias": "Relay"
+    }
+  ]
+}

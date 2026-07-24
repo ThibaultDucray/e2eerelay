@@ -131,6 +131,12 @@ Long-poll:
 ### 4.6 Cleanup
 - Fully-acked messages: when all recipients are acked, delete message row (or schedule).
 - TTL purge: delete expired messages.
+- Inactive devices: on each cleanup tick, delete any device for which every token is
+  revoked, past its hard TTL (`TOKEN_TTL_SEC`), or idle-expired (`TOKEN_IDLE_DAYS`) — i.e.
+  no remaining token could pass `AuthMiddleware`. A device with at least one still-usable
+  token is left alone. Before deleting such a device, its own still-pending recipient rows
+  are acked the same way as explicit deregistration (see below) — it will never poll again
+  either way.
 
 **Device deregistration and `acked_at`:** deleting a device (`DELETE /devices`) must not
 delete other messages' `message_recipients` rows referencing that device's inbox — see the

@@ -29,14 +29,14 @@ var schemaSQLite string
 
 // TokenRow is the DB representation of a relay_tokens row.
 type TokenRow struct {
-	TokenHash   []byte
-	TokenType   string  // "send" | "recv"
-	DeviceID    string
-	InboxID     *string // nil for send tokens
-	CreatedAt   int64
-	ExpiresAt   int64
-	LastUsedAt  *int64
-	RevokedAt   *int64
+	TokenHash  []byte
+	TokenType  string // "send" | "recv"
+	DeviceID   string
+	InboxID    *string // nil for send tokens
+	CreatedAt  int64
+	ExpiresAt  int64
+	LastUsedAt *int64
+	RevokedAt  *int64
 }
 
 // MessageRow represents a relay_messages row.
@@ -105,6 +105,11 @@ type Store interface {
 	DeleteDevice(ctx context.Context, deviceID string, nowNs int64) (bool, error)
 	DeleteExpiredMessages(ctx context.Context, nowNs int64) (int64, error)
 	DeleteFullyAckedMessages(ctx context.Context) (int64, error)
+	// DeleteInactiveDevices removes devices for which every token is revoked,
+	// hard-expired (expires_at < nowNs), or idle-expired (no activity within
+	// idleNs). Ack-then-delete semantics for their own pending recipient rows
+	// are the same as DeleteDevice. Returns the number of devices deleted.
+	DeleteInactiveDevices(ctx context.Context, nowNs, idleNs int64) (int64, error)
 	Ping(ctx context.Context) error
 	Close() error
 }
@@ -452,6 +457,82 @@ func (s *store) DeleteFullyAckedMessages(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (s *store) DeleteInactiveDevices(ctx context.Context, nowNs, idleNs int64) (int64, error) {
+	cutoff := nowNs - idleNs
+
+	// A device is inactive when none of its tokens are still usable: not revoked,
+	// not past its hard TTL, and not idle past cutoff.
+	selQ := s.bind(`
+		SELECT device_id FROM relay_devices d
+		WHERE NOT EXISTS (
+			SELECT 1 FROM relay_tokens t
+			WHERE t.device_id = d.device_id
+			  AND t.revoked_at IS NULL
+			  AND t.expires_at > ?
+			  AND COALESCE(t.last_used_at, t.created_at) > ?
+		)`)
+	rows, err := s.db.QueryContext(ctx, selQ, nowNs, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	var deviceIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		deviceIDs = append(deviceIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	rows.Close()
+
+	if len(deviceIDs) == 0 {
+		return 0, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	ph := placeholders(len(deviceIDs))
+	idArgs := make([]interface{}, len(deviceIDs))
+	for i, id := range deviceIDs {
+		idArgs[i] = id
+	}
+
+	// Same ack-before-delete rationale as DeleteDevice: these devices will never
+	// poll again, so ack their own still-pending recipient rows before removing
+	// them, rather than leaving those rows blocking DeleteFullyAckedMessages
+	// until TTL expiry.
+	ackQ := s.bind(`
+		UPDATE relay_message_recipients SET acked_at = ?
+		WHERE acked_at IS NULL AND recipient_inbox_id IN (
+			SELECT inbox_id FROM relay_inboxes WHERE device_id IN ` + ph + `
+		)`)
+	if _, err := tx.ExecContext(ctx, ackQ, append([]interface{}{nowNs}, idArgs...)...); err != nil {
+		return 0, err
+	}
+
+	delQ := s.bind(`DELETE FROM relay_devices WHERE device_id IN ` + ph)
+	res, err := tx.ExecContext(ctx, delQ, idArgs...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func (s *store) Ping(ctx context.Context) error {
