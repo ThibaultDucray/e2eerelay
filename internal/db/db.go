@@ -197,8 +197,8 @@ func (s *store) Migrate() error {
 }
 
 func (s *store) InsertDevice(ctx context.Context, deviceID, deviceName, platform, clientVersion string, nowNs int64) error {
-	q := s.bind(`INSERT INTO relay_devices (device_id, device_name, platform, client_version, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)`)
-	_, err := s.db.ExecContext(ctx, q, deviceID, deviceName, platform, clientVersion, nowNs, nowNs)
+	q := s.bind(`INSERT INTO relay_devices (device_id, device_name, platform, client_version, created_at) VALUES (?, ?, ?, ?, ?)`)
+	_, err := s.db.ExecContext(ctx, q, deviceID, deviceName, platform, clientVersion, nowNs)
 	return err
 }
 

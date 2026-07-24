@@ -7,8 +7,7 @@ CREATE TABLE IF NOT EXISTS relay_devices (
     device_name    TEXT   NOT NULL,
     platform       TEXT   NOT NULL,
     client_version TEXT   NOT NULL,
-    created_at     BIGINT NOT NULL,
-    last_seen_at   BIGINT NOT NULL
+    created_at     BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS relay_inboxes (

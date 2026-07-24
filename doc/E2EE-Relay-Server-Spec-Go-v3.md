@@ -43,7 +43,11 @@ The server MUST NOT decrypt or interpret ciphertext.
 - `platform` text
 - `client_version` text
 - `created_at` timestamptz
-- `last_seen_at` timestamptz
+
+Note: there is no `last_seen_at` on this table — it was write-once (set at registration,
+never updated) and therefore useless for tracking real activity. Actual last-activity
+tracking lives on `tokens.last_used_at` (updated on every authenticated request via
+`AuthMiddleware`/`TouchToken`), which is also what §4.6's inactive-device cleanup uses.
 
 #### `inboxes`
 - `inbox_id` text PK
