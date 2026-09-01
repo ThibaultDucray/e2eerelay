@@ -194,6 +194,44 @@ func (h *Handlers) DeregisterDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ----- Rename device -----
+
+// maxDeviceNameLen bounds device_name on rename, matching what registration
+// implicitly allows given relay_devices.device_name's storage.
+const maxDeviceNameLen = 200
+
+func (h *Handlers) RenameDevice(w http.ResponseWriter, r *http.Request) {
+	token := tokenFromCtx(r.Context())
+
+	var req RenameDeviceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body", 0)
+		return
+	}
+	if req.DeviceName == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "device_name is required", 0)
+		return
+	}
+	if len(req.DeviceName) > maxDeviceNameLen {
+		writeError(w, http.StatusBadRequest, "invalid_request", "device_name too long", 0)
+		return
+	}
+
+	ctx := r.Context()
+	updated, err := h.store.UpdateDeviceName(ctx, token.DeviceID, req.DeviceName)
+	if err != nil {
+		h.log.Error("rename device", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to rename device", 0)
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusNotFound, "not_found", "device not found", 0)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ----- Enqueue message -----
 
 func (h *Handlers) EnqueueMessage(w http.ResponseWriter, r *http.Request) {

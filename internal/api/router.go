@@ -53,6 +53,11 @@ func NewRouter(cfg *config.Config, store db.Store, h *hub.Hub, q *quota.Store, r
 		).Delete("/devices", handlers.DeregisterDevice)
 
 		r.With(
+			AuthMiddleware(store, cfg, "send"),
+			rl.TokenMiddleware("send"),
+		).Patch("/devices", handlers.RenameDevice)
+
+		r.With(
 			AuthMiddleware(store, cfg, ""),
 			rl.TokenMiddleware("send"),
 		).Post("/tokens/revoke", handlers.RevokeToken)

@@ -70,6 +70,10 @@ type EnqueueRequest struct {
 	Ciphertext          B64URL   `json:"ciphertext"`
 }
 
+type RenameDeviceRequest struct {
+	DeviceName string `json:"device_name"`
+}
+
 type AckRequest struct {
 	InboxID    string    `json:"inbox_id"`
 	MessageIDs []string  `json:"message_ids"`

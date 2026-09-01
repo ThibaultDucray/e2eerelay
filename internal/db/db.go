@@ -85,6 +85,8 @@ type InsertMessageParams struct {
 type Store interface {
 	Migrate() error
 	InsertDevice(ctx context.Context, deviceID, deviceName, platform, clientVersion string, nowNs int64) error
+	// UpdateDeviceName renames a device. Returns true if the device existed.
+	UpdateDeviceName(ctx context.Context, deviceID, deviceName string) (bool, error)
 	InsertInbox(ctx context.Context, inboxID, deviceID string, nowNs int64) error
 	InsertToken(ctx context.Context, tokenHash []byte, tokenType, deviceID string, inboxID *string, expiresAt, nowNs int64) error
 	LookupToken(ctx context.Context, hash []byte) (*TokenRow, error)
@@ -200,6 +202,16 @@ func (s *store) InsertDevice(ctx context.Context, deviceID, deviceName, platform
 	q := s.bind(`INSERT INTO relay_devices (device_id, device_name, platform, client_version, created_at) VALUES (?, ?, ?, ?, ?)`)
 	_, err := s.db.ExecContext(ctx, q, deviceID, deviceName, platform, clientVersion, nowNs)
 	return err
+}
+
+func (s *store) UpdateDeviceName(ctx context.Context, deviceID, deviceName string) (bool, error) {
+	q := s.bind(`UPDATE relay_devices SET device_name = ? WHERE device_id = ?`)
+	res, err := s.db.ExecContext(ctx, q, deviceName, deviceID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 func (s *store) InsertInbox(ctx context.Context, inboxID, deviceID string, nowNs int64) error {

@@ -256,7 +256,36 @@ This action is **irreversible**. After a successful response the `send_token` an
 
 ---
 
-### 4.4 `POST /relay/v3/tokens/revoke` — Revoke token
+### 4.4 `PATCH /relay/v3/devices` — Rename device
+
+**Auth:** `send_token`
+
+Updates the human-readable `device_name` for the calling device. No other device fields (platform, client_version, inbox, tokens) are affected.
+
+**Request body:**
+
+```json
+{ "device_name": "Thibault's iPhone" }
+```
+
+**Response `204 No Content`** — device renamed successfully.
+
+**Response `400 Bad Request`** — `device_name` missing/empty, or exceeds 200 characters.
+
+**Response `404 Not Found`** — device was deleted (the token was valid but the device row is gone).
+
+```json
+{ "error": { "code": "not_found", "message": "device not found" } }
+```
+
+**Notes**
+
+- The `send_token` is used for authentication; the server derives `device_id` from it — there is no `device_id` in the request body or URL, so a token can only rename the device it belongs to.
+- Idempotent: renaming to the same name again succeeds and returns `204`.
+
+---
+
+### 4.5 `POST /relay/v3/tokens/revoke` — Revoke token
 
 **Auth:** `send_token` or `recv_token` (either type accepted)
 
@@ -280,7 +309,7 @@ This is a targeted revocation: only the presented token is revoked. The other to
 
 ---
 
-### 4.5 `POST /relay/v3/messages` — Enqueue message
+### 4.6 `POST /relay/v3/messages` — Enqueue message
 
 **Auth:** `send_token`
 
@@ -335,7 +364,7 @@ This is a targeted revocation: only the presented token is revoked. The other to
 
 ---
 
-### 4.6 `GET /relay/v3/messages` — Poll inbox
+### 4.7 `GET /relay/v3/messages` — Poll inbox
 
 **Auth:** `recv_token`
 
@@ -401,7 +430,7 @@ Messages are ordered by `(created_at ASC, message_id ASC)`.
 
 ---
 
-### 4.7 `POST /relay/v3/messages/ack` — Acknowledge messages
+### 4.8 `POST /relay/v3/messages/ack` — Acknowledge messages
 
 **Auth:** `recv_token`
 
@@ -446,7 +475,7 @@ Marks messages as delivered and deleted for this inbox. Once all recipients have
 
 ---
 
-### 4.8 `GET /relay/v3/health` — Health check
+### 4.9 `GET /relay/v3/health` — Health check
 
 No authentication required.
 
@@ -472,7 +501,7 @@ No authentication required.
 
 ---
 
-### 4.9 `GET /relay/v3/limits` — Server limits
+### 4.10 `GET /relay/v3/limits` — Server limits
 
 No authentication required. Returns the server's current configuration limits.
 
@@ -677,5 +706,6 @@ All errors return a JSON body with HTTP status codes in the 4xx–5xx range:
       if 401 token_expired: re-register (POST /devices), re-exchange inbox_id with peers
       sleep(<poll_interval>)
 7.  POST   /relay/v3/tokens/revoke     — optional: revoke a specific token on suspected compromise
-8.  DELETE /relay/v3/devices           — deregister when uninstalling; discard all local credentials
+8.  PATCH  /relay/v3/devices           — optional: update device_name (e.g. user renames the device)
+9.  DELETE /relay/v3/devices           — deregister when uninstalling; discard all local credentials
 ```

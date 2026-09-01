@@ -47,7 +47,7 @@ The server MUST NOT decrypt or interpret ciphertext.
 Note: there is no `last_seen_at` on this table — it was write-once (set at registration,
 never updated) and therefore useless for tracking real activity. Actual last-activity
 tracking lives on `tokens.last_used_at` (updated on every authenticated request via
-`AuthMiddleware`/`TouchToken`), which is also what §4.6's inactive-device cleanup uses.
+`AuthMiddleware`/`TouchToken`), which is also what §4.7's inactive-device cleanup uses.
 
 #### `inboxes`
 - `inbox_id` text PK
@@ -83,7 +83,7 @@ Tracks delivery per recipient.
 - `message_id` uuid FK, `ON DELETE CASCADE` from `messages`
 - `recipient_inbox_id` text — **no FK** to `inboxes`. A message's recipient list is
   immutable metadata about who it was addressed to at send time and must survive that
-  inbox/device later being deleted (see §4.6). It's set once by the sender and never
+  inbox/device later being deleted (see §4.7). It's set once by the sender and never
   changed afterward, other than `acked_at` being set by the recipient (or, on
   deregistration, by the server on the recipient's behalf — see below).
 - `acked_at` timestamptz NULL
@@ -101,19 +101,24 @@ Indexes:
 - Generate device_id, inbox_id, send_token, recv_token.
 - Store token hashes.
 
-### 4.2 Authentication
+### 4.2 Rename
+- `PATCH /devices`, authenticated by `send_token` (device_id derived from the token, same
+  as deregistration — no device_id in the request).
+- Updates `device_name` only. Rejects empty or overlong (>200 chars) names.
+
+### 4.3 Authentication
 - Bearer token lookup by hash.
 - Enforce scope:
   - send: sender_device_id must match token.device_id
   - recv: inbox_id must match token.inbox_id
 
-### 4.3 Enqueue (multi-recipient)
+### 4.4 Enqueue (multi-recipient)
 Transaction:
 1. Validate size, recipients count, TTL bounds.
 2. Insert into `messages` idempotently.
 3. Insert into `message_recipients` for each recipient idempotently.
 
-### 4.4 Poll
+### 4.5 Poll
 - Cursor = last `(created_at, message_id)` for this inbox.
 - Query join:
   - recipient_inbox_id = $inbox
@@ -125,14 +130,14 @@ Long-poll:
 - If `wait_ms` and empty result:
   - block until new message for inbox or timeout.
 
-### 4.5 ACK
+### 4.6 ACK
 - Update `message_recipients.acked_at` for the inbox.
 - Idempotent.
 
 **Privacy constraint:**
 - Do not expose sender-visible delivery status. ACK exists only for receiver-side deletion and server housekeeping.
 
-### 4.6 Cleanup
+### 4.7 Cleanup
 - Fully-acked messages: when all recipients are acked, delete message row (or schedule).
 - TTL purge: delete expired messages.
 - Inactive devices: on each cleanup tick, delete any device for which every token is
