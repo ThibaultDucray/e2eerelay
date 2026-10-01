@@ -57,10 +57,10 @@ func Load() *Config {
 		DefaultTTLSeconds:   getint("DEFAULT_TTL_SEC", 1296000),        // 15 days
 		MaxTTLSeconds:       getint("MAX_TTL_SEC", 2592000),            // 30 days
 		MaxPollLimit:        getint("MAX_POLL_LIMIT", 100),
-		MaxWaitMs:           getint("MAX_WAIT_MS", 30000), // 30s
+		MaxWaitMs:           getint("MAX_WAIT_MS", 60000), // 30s
 		CleanupIntervalSec:  getint("CLEANUP_INTERVAL_SEC", 600),
-		TokenTTLSeconds:     getint("TOKEN_TTL_SEC", 31536000), // 1 year
-		TokenIdleDays:       getint("TOKEN_IDLE_DAYS", 182),    // 6 months
+		TokenTTLSeconds:     getint("TOKEN_TTL_SEC", 31536000),        // 1 year
+		TokenIdleDays:       getint("TOKEN_IDLE_DAYS", 182),           // 6 months
 		RegIPRate:           rate.Limit(getfloat("REG_IP_RATE", 0.1)), // ~6/min
 		RegIPBurst:          getint("REG_IP_BURST", 5),
 		SendRate:            rate.Limit(getfloat("SEND_RATE", 20)),
