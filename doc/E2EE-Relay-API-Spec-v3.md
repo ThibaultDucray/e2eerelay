@@ -376,7 +376,7 @@ This is a targeted revocation: only the presented token is revoked. The other to
 | `after` | string | no | — | Cursor from a previous response's `next_cursor`. Omit to start from the beginning. |
 | `limit` | integer | no | 100 | Max messages to return. Clamped to [1, 100]. |
 | `stream_id` | string | no | — | Filter to a specific stream. Omit to receive all streams. |
-| `wait_ms` | integer | no | 0 | If the inbox is empty and `wait_ms > 0`, the server holds the connection open for up to `wait_ms` milliseconds, returning as soon as a message arrives or the timeout expires. Clamped to [0, 30 000]. |
+| `wait_ms` | integer | no | 0 | If the inbox is empty and `wait_ms > 0`, the server holds the connection open for up to `wait_ms` milliseconds, returning as soon as a message arrives or the timeout expires. Clamped to [0, `MAX_WAIT_MS`] (server-configured; 60 000 ms in production, 30 000 ms in the code default). |
 
 **Response `200 OK`**
 
@@ -425,8 +425,8 @@ Messages are ordered by `(created_at ASC, message_id ASC)`.
 - The server checks for messages immediately. If found, it returns at once (wait_ms is irrelevant).
 - If the inbox is empty, the server blocks until either a new message arrives or `wait_ms` elapses.
 - On return the client receives at most one "batch" of newly arrived messages; it should immediately ACK and re-poll.
-- The server caps `wait_ms` at 30 000 ms regardless of the value supplied.
-- Set the HTTP client timeout to at least `wait_ms / 1000 + 10` seconds.
+- The server caps `wait_ms` at its configured `MAX_WAIT_MS` (60 000 ms in production) regardless of the value supplied.
+- Set the HTTP client read timeout to at least `wait_ms + 15` seconds.
 
 ---
 
@@ -569,9 +569,9 @@ loop:
 
 ```
 loop:
-    response = GET /messages?inbox_id=...&after=<cursor>&limit=100&wait_ms=30000
+    response = GET /messages?inbox_id=...&after=<cursor>&limit=100&wait_ms=55000
     # The server returns immediately if messages exist,
-    # or holds the connection up to 30 s if the inbox is empty.
+    # or holds the connection up to wait_ms if the inbox is empty.
     if response.messages:
         process(response.messages)
         POST /messages/ack with all message_ids
@@ -580,7 +580,7 @@ loop:
 ```
 
 - Delivery latency ≈ network RTT when a message is waiting.
-- Requires an HTTP client with a long read timeout (≥ 40 s).
+- Requires an HTTP client with a read timeout of at least wait_ms + 15 s (70 s for wait_ms=55000).
 - The server holds at most one connection per inbox.
 
 ### 6.3 Cursor management
@@ -601,7 +601,7 @@ loop:
 | Max `ciphertext` decoded bytes | 262 144 (256 KiB) | `413 payload_too_large` |
 | Max recipients per message | 50 | `400 invalid_request` |
 | Max messages per poll response | 100 | — (clamped silently) |
-| Max `wait_ms` | 30 000 ms | — (clamped silently) |
+| Max `wait_ms` | `MAX_WAIT_MS`, 60 000 ms in production | — (clamped silently) |
 
 ### 7.2 Rate limits (token bucket, per token or per IP)
 

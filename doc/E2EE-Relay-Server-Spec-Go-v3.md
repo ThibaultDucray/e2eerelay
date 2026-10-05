@@ -129,6 +129,12 @@ Transaction:
 Long-poll:
 - If `wait_ms` and empty result:
   - block until new message for inbox or timeout.
+- `wait_ms` is clamped to `MAX_WAIT_MS` (env, default 60000; production 60000). Idle
+  timeout returns empty without re-querying the DB, so an idle long-poll costs one query per
+  hold, same as a short-poll at that interval. Waiters are woken by the in-memory hub on enqueue.
+- Clients use `wait_ms = 55000` (see Client-Polling-Strategy.txt). `WriteTimeout`/`ReadTimeout`
+  are derived from `MAX_WAIT_MS` in `main.go`.
+- Deployments behind a reverse proxy must have its idle timeout above `MAX_WAIT_MS`.
 
 ### 4.6 ACK
 - Update `message_recipients.acked_at` for the inbox.

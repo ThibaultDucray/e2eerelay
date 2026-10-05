@@ -192,16 +192,52 @@ When sending an event:
 
 ### 7.2 Polling policy
 
-#### iOS
-- On entering foreground: poll immediately.
-- While foreground: poll every 2 minutes OR keep long-poll open.
-- Background: no continuous polling; best-effort using BGAppRefreshTask.
+All platforms use the long poll (client 1.7+). Full rationale and numbers are in
+`Client-Polling-Strategy.txt`; the rules are summarised here.
 
-#### macOS + PC
-- On startup: poll immediately.
-- While running:
-  - prefer long-poll to reduce request rate
-  - or poll every 1–2 minutes
+**Long poll (normal operation, all platforms)**
+- Each poll is `GET /messages` with `wait_ms = 55000`. The relay returns immediately when a
+  message arrives, or empty when the hold expires.
+- 55 s stays under the relay's `MAX_WAIT_MS` (60 000 in production). Do not raise it to 60 s.
+- HTTP read timeout is `wait_ms + 15 s`.
+- No local delay between polls: the next poll is issued as soon as the previous one returns.
+- A cancelled poll (backgrounding, sync stopped, "Sync now") closes its socket immediately so
+  the relay releases the connection.
+
+**Fast poll (after pairing/joining)**
+- While a bulk sync or peer introduction is expected, use `wait_ms = 2000` for a limited window
+  (30 s after joining/pairing; 3 minutes for bulk sync after pairing on iOS/macOS). Still a long
+  poll, not a tight loop.
+
+#### iOS
+- On entering foreground: poll immediately, then long-poll.
+- Background: the sync engine is stopped on entering background and restarted on foreground.
+  No long poll is held in the background and BGAppRefreshTask is not used for sync today
+  (possible future addition, not implemented).
+
+#### Android
+- On ON_START: resume sync and long-poll.
+- On ON_STOP: stop the sync engine. No background polling.
+
+#### macOS + Windows
+- On startup: poll immediately, then long-poll.
+- No backgrounding rule: the app keeps running and keeps long-polling.
+
+#### Failure handling and backoff (all platforms)
+Applies to any failed poll (network error, 5xx including gateway 503), except authorization
+failures.
+- **Schedule:** first retry after 30 s; each consecutive failure doubles the wait (30, 60, 120,
+  240 s); capped at 300 s while failures continue.
+- **Jitter:** each wait is multiplied by a random factor in [0.8, 1.2].
+- **429:** wait the number of seconds in `Retry-After` (default 60 s if missing or unreadable).
+  The exponential schedule does not apply to 429.
+- **Reset:** the failure counter resets only on a successful (2xx) poll. A manual "Sync now" or
+  engine restart does not reset it; it issues one immediate poll, and if that fails the next wait
+  continues from the current step.
+- **Authorization failures** (`401 token_expired`, `401 unauthorized`): stop the poll loop. Restart
+  on next unlock or re-registration. Not retried on the backoff schedule.
+- **Sending is separate:** outgoing messages retry from the local outbox; the poll backoff does
+  not delay sending.
 
 ### 7.3 Processing loop
 For each relay message:
@@ -301,13 +337,13 @@ Revocation procedure (client-side):
 
 ### 9.1 macOS (Swift)
 - Keep sync engine running while app is open.
-- Prefer long-poll with a background Task.
+- Long-poll (`wait_ms = 55000`) with a background Task; cancel the poll socket on stop (see 7.2).
 - Persist outbox and applied_event_ids in SQLite.
 - Store tokens + SGK epochs in Keychain.
 
 ### 9.2 Windows
 - Suggested model: tray app that starts at login.
-- Networking: background thread with long-poll.
+- Networking: background thread with long-poll (`wait_ms = 55000`, see 7.2).
 - Storage:
   - SQLite for vault + sync metadata
   - Credential Manager for tokens + SGK
